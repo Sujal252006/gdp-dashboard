@@ -1,151 +1,184 @@
+
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+import joblib
 
-# Set the title and favicon that appear in the Browser's tab bar.
+# Page configuration
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title="Gym Predictive Analytics",
+    page_icon="🏋️",
+    layout="wide"
 )
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+# Load trained model
+@st.cache_resource
+def load_model():
+    return joblib.load("gym_calorie_model.pkl")
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+try:
+    model = load_model()
+except Exception as e:
+    st.error(
+        "Model not found. Please upload "
+        "gym_calorie_model.pkl into the same folder as app.py."
+    )
+    st.stop()
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+# Dashboard heading
+st.title("🏋️ Gym Predictive Analytics")
+st.subheader("Calories Burned Prediction Using Machine Learning")
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+st.write(
+    "Enter your workout details below to estimate "
+    "the calories burned during your gym session."
+)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+st.divider()
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
+# Input form
+with st.form("workout_form"):
+
+    st.header("Enter Workout Details")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        age = st.number_input(
+            "Age (years)", min_value=10, max_value=100, value=25
+        )
+
+        gender = st.selectbox(
+            "Gender", ["Male", "Female"]
+        )
+
+        weight = st.number_input(
+            "Weight (kg)", min_value=20.0, max_value=300.0,
+            value=70.0, step=1.0
+        )
+
+        height = st.number_input(
+            "Height (m)", min_value=1.0, max_value=2.5,
+            value=1.70, step=0.01
+        )
+
+        max_bpm = st.number_input(
+            "Maximum BPM", min_value=60, max_value=220, value=180
+        )
+
+        avg_bpm = st.number_input(
+            "Average BPM", min_value=40, max_value=200, value=130
+        )
+
+        resting_bpm = st.number_input(
+            "Resting BPM", min_value=30, max_value=120, value=70
+        )
+
+    with col2:
+        duration = st.number_input(
+            "Session Duration (hours)",
+            min_value=0.1, max_value=8.0,
+            value=1.0, step=0.1
+        )
+
+        workout_type = st.selectbox(
+            "Workout Type",
+            ["Cardio", "HIIT", "Strength", "Yoga"]
+        )
+
+        fat_percentage = st.number_input(
+            "Fat Percentage (%)",
+            min_value=1.0, max_value=70.0,
+            value=25.0, step=0.5
+        )
+
+        water_intake = st.number_input(
+            "Water Intake (liters)",
+            min_value=0.0, max_value=15.0,
+            value=2.5, step=0.1
+        )
+
+        workout_frequency = st.number_input(
+            "Workout Frequency (days/week)",
+            min_value=1, max_value=7, value=4
+        )
+
+        experience_level = st.selectbox(
+            "Experience Level", [1, 2, 3],
+            format_func=lambda x: {
+                1: "Beginner",
+                2: "Intermediate",
+                3: "Advanced"
+            }[x]
+        )
+
+    submitted = st.form_submit_button(
+        "Predict Calories Burned", type="primary",
+        use_container_width=True
     )
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# Prediction
+if submitted:
+    if avg_bpm > max_bpm:
+        st.error("Average BPM cannot be greater than Maximum BPM.")
+    elif resting_bpm > avg_bpm:
+        st.error("Resting BPM should not exceed Average BPM.")
+    else:
+        bmi = weight / (height ** 2)
 
-    return gdp_df
+        # Match the feature names used during model training
+        input_data = pd.DataFrame([{
+            "Age": age,
+            "Gender": gender,
+            "Weight (kg)": weight,
+            "Height (m)": height,
+            "Max_BPM": max_bpm,
+            "Avg_BPM": avg_bpm,
+            "Resting_BPM": resting_bpm,
+            "Session_Duration (hours)": duration,
+            "Workout_Type": workout_type,
+            "Fat_Percentage": fat_percentage,
+            "Water_Intake (liters)": water_intake,
+            "Workout_Frequency (days/week)": workout_frequency,
+            "Experience_Level": experience_level,
+            "BMI": bmi
+        }])
 
-gdp_df = get_gdp_data()
+        try:
+            prediction = model.predict(input_data)[0]
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+            st.divider()
+            st.header("Prediction Result")
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+            result_col1, result_col2 = st.columns(2)
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+            with result_col1:
+                st.metric(
+                    label="Estimated Calories Burned",
+                    value=f"{prediction:.2f} kcal"
+                )
 
-# Add some spacing
-''
-''
+            with result_col2:
+                st.metric(
+                    label="Calculated BMI",
+                    value=f"{bmi:.2f}"
+                )
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+            st.success("Prediction completed successfully!")
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+            st.caption(
+                "Note: This is an estimate from a machine-learning model, "
+                "not a direct measurement of calories burned."
+            )
 
-countries = gdp_df['Country Code'].unique()
+            with st.expander("View Input Data"):
+                st.dataframe(input_data, use_container_width=True)
 
-if not len(countries):
-    st.warning("Select at least one country")
+        except Exception as e:
+            st.error(f"Prediction failed: {e}")
+            st.info(
+                "Check that this model was trained with the same "
+                "14 input features and compatible category values."
+            )
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+st.divider()
+st.caption("Gym Predictive Analytics | Random Forest Regression")
